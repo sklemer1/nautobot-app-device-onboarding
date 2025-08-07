@@ -39,6 +39,7 @@ def port_mode_to_nautobot(current_mode):
         "access": "access",
         "trunk": "tagged",
         "bridged": "tagged",
+        "native-untagged": "tagged",
         "routed": "",
     }
     return mode_mapping.get(current_mode, "")
@@ -78,7 +79,7 @@ def _interface_mode_logic(dict_item):  # pylint: disable=too-many-return-stateme
             return "access"
         if dict_item["admin_mode"] == "trunk" and dict_item["trunking_vlans"] in ["ALL", "1-4094", ["ALL"], ["1-4094"]]:
             return "tagged-all"
-        if dict_item["admin_mode"] == "trunk":
+        if dict_item["admin_mode"] in ["trunk", "native-untagged"]:
             return "tagged"
         if "dynamic" in dict_item["admin_mode"]:
             if "access" in dict_item["mode"]:
