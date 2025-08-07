@@ -23,14 +23,13 @@ sync_devices:
     commands:
       - command: "show interface"
         parser: "textfsm"
-        jpath: "[?contains(ip_address, `{{ obj }}/`)].{name: interface, enabled: link_status}"
+        jpath: "[?contains(ip_address, `{{ obj }}`)].{name: interface, enabled: link_status}"
         post_processor: "{{ (obj | selectattr('enabled', 'eq', 'up') | list | first ).name }}"
   mask_length:
     commands:
       - command: "show interface"
         parser: "textfsm"
-        jpath: "[?contains(ip_address, `{{ obj }}/`)].ip_address"
-        post_processor: "{{ obj[0].split('/')[1] }}"
+        jpath: "[?contains(ip_address, `{{ obj }}`)].prefix_length"
         iterable_type: "int"
 sync_network_data:
   pre_processor:
