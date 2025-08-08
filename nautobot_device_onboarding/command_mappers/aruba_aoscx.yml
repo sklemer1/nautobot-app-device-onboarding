@@ -23,7 +23,7 @@ sync_devices:
     commands:
       - command: "show interface"
         parser: "textfsm"
-        jpath: "[?contains(ip_address, `{{ obj }}`)].{name: interface, enabled: link_status}"
+        jpath: "[?contains(ip_address, `{{ obj }}`)].{name: interface, enabled: link_admin}"
         post_processor: "{{ (obj | selectattr('enabled', 'eq', 'up') | list | first ).name }}"
   mask_length:
     commands:
@@ -86,7 +86,7 @@ sync_network_data:
     commands:
       - command: "show interface"
         parser: "textfsm"
-        jpath: "[?interface=='{{ current_key }}'].link_status"
+        jpath: "[?interface=='{{ current_key }}'].link_admin"
         post_processor: "{{ obj[0] | interface_status_to_bool }}"
   interfaces__802.1Q_mode:
     commands:
