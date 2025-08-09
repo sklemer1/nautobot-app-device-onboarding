@@ -1,0 +1,31 @@
+---
+sync_devices:
+  hostname:
+    commands:
+      - command: "show system"
+        parser: "textfsm"
+        jpath: "[*].name"
+  serial:
+    commands:
+      - command: "show system"
+        parser: "textfsm"
+        jpath: "[*].serial"
+  device_type:
+    commands:
+      - command: "show tech buffer"
+        parser: "textfsm"
+        jpath: "[*].{name: name, product: product}"
+        post_processor: "{{ obj[0]['name'].replace('HP ','') }} ({{ obj[0]['product'].replace('HP ','') }})"
+  mgmt_interface:
+    commands:
+      - command: "show ip"
+        parser: "textfsm"
+        jpath: "[*].{interface: vlan_name, ip_addr: ip_address}"
+        post_processor: "{% for i in obj %}{% if i['ip_addr'] %}{% if original_host in i['ip_addr'] %}{{ i['interface'] }}{% endif %}{% endif %}{% endfor %}"
+  mask_length:
+    commands:
+      - command: "show ip"
+        parser: "textfsm"
+        jpath: "[*].{ip: ip_address[?contains(@, `{{ obj }}`)][], mask: subnet_mask}"
+        post_processor: "{{ obj[0]['mask'] | netmask_to_cidr }}"
+        iterable_type: "int"
