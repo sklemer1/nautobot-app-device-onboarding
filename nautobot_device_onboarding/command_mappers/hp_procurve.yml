@@ -29,3 +29,68 @@ sync_devices:
         jpath: "[*].{ip: ip_address[?contains(@, `{{ obj }}`)][], mask: subnet_mask}"
         post_processor: "{{ obj[0]['mask'] | netmask_to_cidr }}"
         iterable_type: "int"
+sync_network_data:
+  pre_processor:
+    vlan_map:
+      commands:
+        - command: "show ip"
+          parser: "textfsm"
+          # Since we use the jdiff custom jmespath we have access to save keys with $ syntax.
+          jpath: "[*].[vlan_name,config]"
+          post_processor: "{{ obj | tojson }}"
+  serial:
+    commands:
+      - command: "show system"
+        parser: "textfsm"
+        jpath: "[*].serial"
+  interfaces:
+    root_key: true
+    commands:
+      - command: "show interfaces brief"
+        parser: "textfsm"
+        jpath: "[*].port"  # when root_key=true this extracted value is what becomes interable in keys using __ under `current_key`.
+        post_processor: "{% set result={} %}{% for interface in obj %}{{ result.update({interface: {'mac_address': '', 'mtu': '1500', 'lag':[], 'description': ''}}) or '' }}{% endfor %}{% for vlan in vlan_map if not 'Disabled' in vlan[1] %}{{ result.update({ vlan[0]: {'mac_address': '', 'mtu': '1500', 'lag':[], 'description': ''}}) or '' }}{% endfor %}{{ result | tojson }}"
+  interfaces__type:
+    commands:
+      - command: "show interfaces brief"
+        parser: "textfsm"
+        jpath: "[?port=='{{ current_key }}'].type"
+        post_processor: "{% if obj | length > 0 %}{{ obj[0] | map_interface_type }}{% else %}virtual{% endif %}"
+  interfaces__link_status:
+    commands:
+      - command: "show interfaces brief"
+        parser: "textfsm"
+        jpath: "[?port=='{{ current_key }}'].enabled"
+        post_processor: "{%if obj | length  <=0 %}True{%elif 'Yes' in obj[0] %}True{% else %}False{% endif %}"
+  interfaces__802.1Q_mode:
+    commands:
+      - command: "show vlans ports all detail"
+        parser: "textfsm"
+        jpath: "[?port=='{{ current_key }}'].vlan_trunk"
+        post_processor: "{% if obj | length > 0 and obj[0] %}tagged{% else %}access{% endif %}"
+        iterable_type: "str"
+  interfaces__tagged_vlans:
+    commands:
+      - command: "show vlan ports all detail"
+        parser: "textfsm"
+        jpath: "[?port=='{{ current_key }}'].{id: vlan_trunk, name: vlan_trunk_name}"
+        post_processor: "{% if obj | length > 0 %}[{% for vlan in obj[0]['id'] %}{ \"id\": {{ vlan }}, \"name\": \"{{ obj[0]['name'][loop.index0] }}\"}{% if not loop.last %},{% endif %}{% endfor %}]{% endif %}"
+  interfaces__untagged_vlan:
+    commands:
+      - command: "show vlan ports all detail"
+        parser: "textfsm"
+        jpath: "[?port=='{{ current_key }}'].{id: vlan_access, name: vlan_name}"
+        post_processor: "{% if obj | length > 0 %}{{ obj[0] | tojson }}{% endif %}"
+        iterable_type: "dict"
+  interfaces__ip_addresses:
+    commands:
+      - command: "show ip"
+        parser: "textfsm"
+        jpath: "[?vlan_name=='{{ current_key }}'].{ip_address: ip_address, prefix_length: subnet_mask}"
+        post_processor: "{% if obj | length > 0 and not 'Disabled' in  obj[0]['ip_address'] %}[{ \"ip_address\": \"{{ obj[0]['ip_address'] }}\", \"prefix_length\": \"{{ obj[0]['prefix_length'] | netmask_to_cidr }}\"}]{% endif %}"
+        iterable_type: "list"
+  software_version:
+    commands:
+      - command: "show system"
+        parser: "textfsm"
+        jpath: "[*].software_version"
