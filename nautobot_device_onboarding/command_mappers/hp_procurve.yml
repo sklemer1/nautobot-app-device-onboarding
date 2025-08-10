@@ -1,5 +1,14 @@
 ---
 sync_devices:
+  pre_processor:
+    svi_map:
+      commands:
+        - command: "show vlans"
+          parser: "textfsm"
+          # Since we use the jdiff custom jmespath we have access to save keys with $ syntax.
+          jpath: "[*].[$vlan_name$,vlan_id]"
+          post_processor: "{{ obj | flatten_list_of_dict_from_value('vlan_id') | tojson }}"
+
   hostname:
     commands:
       - command: "show system"
@@ -21,7 +30,7 @@ sync_devices:
       - command: "show ip"
         parser: "textfsm"
         jpath: "[*].{interface: vlan_name, ip_addr: ip_address}"
-        post_processor: "{% for i in obj %}{% if i['ip_addr'] %}{% if original_host in i['ip_addr'] %}{{ i['interface'] }}{% endif %}{% endif %}{% endfor %}"
+        post_processor: "{% for i in obj %}{% if i['ip_addr'] %}{% if original_host in i['ip_addr'] %}Vlan{{ svi_map[i['interface']] }}{% endif %}{% endif %}{% endfor %}"
   mask_length:
     commands:
       - command: "show ip"
@@ -31,13 +40,20 @@ sync_devices:
         iterable_type: "int"
 sync_network_data:
   pre_processor:
-    vlan_map:
+    svis:
       commands:
         - command: "show ip"
           parser: "textfsm"
           # Since we use the jdiff custom jmespath we have access to save keys with $ syntax.
-          jpath: "[*].[vlan_name,config]"
-          post_processor: "{{ obj | tojson }}"
+          jpath: "[*].[vlan_name,config,ip_address,subnet_mask]"
+          post_processor: "{% set result={} %}{% for vlan in obj if not 'Disabled' in vlan[1] %}{{ result.update({vlan[0]:{'ip_address': vlan[2], 'prefix_length':(vlan[3]| netmask_to_cidr)}}) or '' }}{% endfor %}{{ result | tojson }}"
+    svi_map:
+      commands:
+        - command: "show vlans"
+          parser: "textfsm"
+          # Since we use the jdiff custom jmespath we have access to save keys with $ syntax.
+          jpath: "[*].[$vlan_name$,vlan_id]"
+          post_processor: "{{ obj | flatten_list_of_dict_from_value('vlan_id') | tojson }}"
   serial:
     commands:
       - command: "show system"
@@ -49,7 +65,7 @@ sync_network_data:
       - command: "show interfaces brief"
         parser: "textfsm"
         jpath: "[*].port"  # when root_key=true this extracted value is what becomes interable in keys using __ under `current_key`.
-        post_processor: "{% set result={} %}{% for interface in obj %}{{ result.update({interface: {'mac_address': '', 'mtu': '1500', 'lag':[], 'description': ''}}) or '' }}{% endfor %}{% for vlan in vlan_map if not 'Disabled' in vlan[1] %}{{ result.update({ vlan[0]: {'mac_address': '', 'mtu': '1500', 'lag':[], 'description': ''}}) or '' }}{% endfor %}{{ result | tojson }}"
+        post_processor: "{% set result={} %}{% for interface in obj %}{{ result.update({interface: {'mac_address': '', 'mtu': '1500', 'lag':[], 'description': '', 'ip_addresses':[]}}) or '' }}{% endfor %}{% for vlan,ip in svis.items() %}{% set svi_name='Vlan'~svi_map[vlan] %}{{ result.update({ svi_name: {'mac_address': '', 'mtu': '1500', 'lag':[], 'description': '', 'ip_addresses': [{'ip_address': ip.ip_address, 'prefix_length': ip.prefix_length}] }}) or '' }}{% endfor %}{{ result | tojson }}"
   interfaces__type:
     commands:
       - command: "show interfaces brief"
@@ -82,13 +98,6 @@ sync_network_data:
         jpath: "[?port=='{{ current_key }}'].{id: vlan_access, name: vlan_name}"
         post_processor: "{% if obj | length > 0 %}{{ obj[0] | tojson }}{% endif %}"
         iterable_type: "dict"
-  interfaces__ip_addresses:
-    commands:
-      - command: "show ip"
-        parser: "textfsm"
-        jpath: "[?vlan_name=='{{ current_key }}'].{ip_address: ip_address, prefix_length: subnet_mask}"
-        post_processor: "{% if obj | length > 0 and not 'Disabled' in  obj[0]['ip_address'] %}[{ \"ip_address\": \"{{ obj[0]['ip_address'] }}\", \"prefix_length\": \"{{ obj[0]['prefix_length'] | netmask_to_cidr }}\"}]{% endif %}"
-        iterable_type: "list"
   software_version:
     commands:
       - command: "show system"
